@@ -9,7 +9,8 @@ import re
 RSS_FEEDS = {
     "Al Jazeera English": "https://www.aljazeera.com/xml/rss/all.xml",
     "Reuters Middle East": "http://feeds.reuters.com/Reuters/middleeastNews",
-    "L’Orient-Le Jour (FR)": "https://www.lorientlejour.com/rss/accueil.xml"
+    "L’Orient-Le Jour (FR)": "https://www.lorientlejour.com/rss/accueil.xml",
+    "BBC": "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"
 }
 
 KEYWORDS = ['explosion', 'protest', 'shortage', 'flood', 'crisis', 'displacement', 'conflict', 'fire', 'violence']
