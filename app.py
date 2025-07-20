@@ -1,23 +1,47 @@
 
 import streamlit as st
+import feedparser
 import pandas as pd
-import snscrape.modules.twitter as sntwitter
-from datetime import datetime, timedelta
+from datetime import datetime
+import re
 
-# -----------------------
-# Configuration
-# -----------------------
+# --- RSS Sources ---
+RSS_FEEDS = {
+    "Al Jazeera English": "https://www.aljazeera.com/xml/rss/all.xml",
+    "Reuters Middle East": "http://feeds.reuters.com/Reuters/middleeastNews",
+    "L’Orient-Le Jour (FR)": "https://www.lorientlejour.com/rss/accueil.xml"
+}
+
 KEYWORDS = ['explosion', 'protest', 'shortage', 'flood', 'crisis', 'displacement', 'conflict', 'fire', 'violence']
-COUNTRIES = {
+ADMIN1_LOCATIONS = {
     'Lebanon': ['Beirut', 'Tripoli', 'Sidon', 'Bekaa'],
     'Syria': ['Damascus', 'Aleppo', 'Homs', 'Idlib']
 }
-TWEETS_PER_COUNTRY = 100
-DAYS_BACK = 1
 
-# -----------------------
-# Helper Functions
-# -----------------------
+# --- Functions ---
+def fetch_rss_entries():
+    entries = []
+    for source, url in RSS_FEEDS.items():
+        feed = feedparser.parse(url)
+        for entry in feed.entries:
+            title = entry.title
+            summary = entry.get("summary", "")
+            published = entry.get("published", "")
+            link = entry.link
+            for keyword in KEYWORDS:
+                if keyword.lower() in title.lower() or keyword.lower() in summary.lower():
+                    entries.append({
+                        'source': source,
+                        'title': title,
+                        'summary': summary,
+                        'published': published,
+                        'keyword': keyword,
+                        'url': link,
+                        'sentiment': tag_sentiment(title + " " + summary),
+                        'admin1': detect_admin1(title + " " + summary)
+                    })
+    return pd.DataFrame(entries)
+
 def tag_sentiment(text):
     warning_keywords = ['explosion', 'fire', 'flood', 'violence', 'conflict']
     rumor_keywords = ['rumor', 'hearing', 'unconfirmed']
@@ -28,61 +52,42 @@ def tag_sentiment(text):
     else:
         return 'Neutral'
 
-def run_scraper():
-    since = (datetime.utcnow() - timedelta(days=DAYS_BACK)).strftime('%Y-%m-%d')
-    until = datetime.utcnow().strftime('%Y-%m-%d')
-    results = []
-    for country, cities in COUNTRIES.items():
+def detect_admin1(text):
+    for country, cities in ADMIN1_LOCATIONS.items():
         for city in cities:
-            for keyword in KEYWORDS:
-                query = f"{keyword} {city} since:{since} until:{until} lang:en"
-                for i, tweet in enumerate(sntwitter.TwitterSearchScraper(query).get_items()):
-                    if i >= TWEETS_PER_COUNTRY:
-                        break
-                    results.append({
-                        'timestamp': tweet.date,
-                        'country': country,
-                        'admin1': city,
-                        'keyword': keyword,
-                        'user': tweet.user.username,
-                        'text': tweet.content,
-                        'sentiment': tag_sentiment(tweet.content),
-                        'url': tweet.url
-                    })
-    df = pd.DataFrame(results)
-    df.to_csv("twitter_incidents.csv", index=False)
-    return df
+            if re.search(rf"\b{city}\b", text, re.IGNORECASE):
+                return city
+    return "Unknown"
 
-# -----------------------
-# Streamlit App
-# -----------------------
-st.set_page_config(page_title="AI Risk Monitor", layout="wide")
-st.title("🧠 AI-Powered Incident & Rumor Monitor")
-st.markdown("Live Twitter scraping for early warnings in Lebanon & Syria")
+# --- Streamlit App ---
+st.set_page_config(page_title="📰 RSS Risk Monitor", layout="wide")
+st.title("🧠 AI-Powered RSS Monitor")
+st.markdown("Monitoring key humanitarian keywords across selected news feeds")
 
-if st.button("🔁 Refresh Data Now"):
-    with st.spinner("Fetching new tweets..."):
-        df = run_scraper()
-        st.success(f"{len(df)} tweets loaded.")
+if st.button("🔁 Fetch Latest Feeds"):
+    with st.spinner("Loading articles..."):
+        df = fetch_rss_entries()
+        st.success(f"{len(df)} entries loaded.")
+        df.to_csv("rss_results.csv", index=False)
 else:
     try:
-        df = pd.read_csv("twitter_incidents.csv")
+        df = pd.read_csv("rss_results.csv")
     except:
         df = pd.DataFrame()
 
 if not df.empty:
-    st.markdown(f"### Results ({len(df)} tweets)")
+    st.markdown(f"### Results ({len(df)} entries)")
     col1, col2 = st.columns(2)
     with col1:
-        country_filter = st.selectbox("Filter by Country", ["All"] + sorted(df['country'].unique().tolist()))
+        filter_source = st.selectbox("Filter by Source", ["All"] + sorted(df['source'].unique()))
     with col2:
-        sentiment_filter = st.selectbox("Filter by Sentiment", ["All", "Warning", "Rumor", "Neutral"])
+        filter_sentiment = st.selectbox("Filter by Sentiment", ["All", "Warning", "Rumor", "Neutral"])
 
-    if country_filter != "All":
-        df = df[df["country"] == country_filter]
-    if sentiment_filter != "All":
-        df = df[df["sentiment"] == sentiment_filter]
+    if filter_source != "All":
+        df = df[df["source"] == filter_source]
+    if filter_sentiment != "All":
+        df = df[df["sentiment"] == filter_sentiment]
 
-    st.dataframe(df[['timestamp', 'country', 'admin1', 'keyword', 'sentiment', 'text', 'url']], use_container_width=True)
+    st.dataframe(df[['published', 'source', 'admin1', 'keyword', 'sentiment', 'title', 'url']], use_container_width=True)
 else:
-    st.warning("No data available. Click the refresh button above to load.")
+    st.info("No data to display. Click above to fetch the latest feeds.")
