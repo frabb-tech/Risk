@@ -1,4 +1,3 @@
-
 pandas
 streamlit
-snscrape
+snscrape @ git+https://github.com/JustAnotherArchivist/snscrape.git
